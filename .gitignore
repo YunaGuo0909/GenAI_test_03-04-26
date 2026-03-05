@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Data (too large for git)
+model1_image_gen/data/
+model2_text_gen/data/corpus.txt
+
+# Outputs (generated during training)
+model1_image_gen/outputs/
+model2_text_gen/outputs/
+pipeline/output/
+
+# Generated website
+website/dist/
+
+# LaTeX auxiliary files
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.log
+paper/*.out
+paper/*.toc
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.synctex.gz
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environments
+.env
+.venv/
+venv/
+
+# Large files
+*.zip
+*.tar.gz
+*.pt
+*.pth
+*.ckpt
+
+# Personal documents (not part of submission)
+CV_*.pdf
+PhD_*.pdf
+*Review.pdf
+
+# Compiled PDF (regenerated from LaTeX source)
+paper/main.pdf

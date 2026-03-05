@@ -1,0 +1,314 @@
+/* Wikipedia-inspired styling for Bestiary of the Unreal */
+
+:root {
+    --bg-color: #f8f9fa;
+    --content-bg: #ffffff;
+    --border-color: #a2a9b1;
+    --link-color: #0645ad;
+    --link-visited: #0b0080;
+    --heading-border: #a2a9b1;
+    --infobox-bg: #f8f9fa;
+    --infobox-header: #b48ead;
+    --category-bg: #eaecf0;
+    --text-color: #202122;
+    --muted-color: #54595d;
+    --notice-bg: #fef6e7;
+    --notice-border: #fc3;
+    --font-serif: "Linux Libertine", "Georgia", "Times", serif;
+    --font-sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-color);
+    background: var(--bg-color);
+}
+
+/* Header bar */
+.site-header {
+    background: var(--content-bg);
+    border-bottom: 1px solid var(--border-color);
+    padding: 8px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.site-header h1 {
+    font-family: var(--font-serif);
+    font-size: 1.5em;
+    font-weight: normal;
+}
+
+.site-header h1 a {
+    color: var(--text-color);
+    text-decoration: none;
+}
+
+.site-header nav a {
+    color: var(--link-color);
+    text-decoration: none;
+    margin-left: 16px;
+    font-size: 13px;
+}
+
+.site-header nav a:hover { text-decoration: underline; }
+
+/* Main content area */
+.content-wrapper {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.article {
+    background: var(--content-bg);
+    border: 1px solid var(--border-color);
+    padding: 24px 30px;
+}
+
+/* Article heading */
+.article h1.article-title {
+    font-family: var(--font-serif);
+    font-size: 1.8em;
+    font-weight: normal;
+    border-bottom: 1px solid var(--heading-border);
+    padding-bottom: 4px;
+    margin-bottom: 12px;
+}
+
+.article-subtitle {
+    font-style: italic;
+    color: var(--muted-color);
+    margin-bottom: 16px;
+    font-size: 0.95em;
+}
+
+/* Section headings */
+.article h2 {
+    font-family: var(--font-serif);
+    font-size: 1.4em;
+    font-weight: normal;
+    border-bottom: 1px solid var(--heading-border);
+    padding-bottom: 2px;
+    margin: 20px 0 10px;
+}
+
+.article h3 {
+    font-size: 1.15em;
+    font-weight: bold;
+    margin: 14px 0 6px;
+}
+
+.article p {
+    margin-bottom: 10px;
+    text-align: justify;
+}
+
+/* Infobox (species card on the right) */
+.infobox {
+    float: right;
+    width: 280px;
+    margin: 0 0 16px 20px;
+    border: 1px solid var(--border-color);
+    background: var(--infobox-bg);
+    font-size: 0.9em;
+    clear: right;
+}
+
+.infobox-header {
+    background: var(--infobox-header);
+    color: #fff;
+    text-align: center;
+    padding: 8px;
+    font-family: var(--font-serif);
+    font-size: 1.1em;
+}
+
+.infobox-image {
+    text-align: center;
+    padding: 10px;
+    background: #fff;
+}
+
+.infobox-image img {
+    max-width: 240px;
+    height: auto;
+    image-rendering: pixelated;
+    border: 1px solid #ddd;
+}
+
+.infobox-image .caption {
+    font-size: 0.85em;
+    color: var(--muted-color);
+    margin-top: 4px;
+    font-style: italic;
+}
+
+.infobox table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.infobox th, .infobox td {
+    padding: 4px 8px;
+    border-top: 1px solid #ddd;
+    vertical-align: top;
+}
+
+.infobox th {
+    text-align: left;
+    font-weight: bold;
+    width: 40%;
+    background: #f0f0f0;
+}
+
+/* AI notice banner */
+.ai-notice {
+    background: var(--notice-bg);
+    border: 1px solid var(--notice-border);
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    font-size: 0.9em;
+    border-radius: 2px;
+}
+
+.ai-notice strong { color: #7a5200; }
+
+/* Category tags */
+.categories {
+    margin-top: 20px;
+    padding-top: 10px;
+    border-top: 1px solid var(--heading-border);
+    font-size: 0.9em;
+    color: var(--muted-color);
+}
+
+.categories a {
+    color: var(--link-color);
+    text-decoration: none;
+}
+
+.category-tag {
+    display: inline-block;
+    background: var(--category-bg);
+    padding: 2px 8px;
+    margin: 2px 4px;
+    border-radius: 3px;
+    font-size: 0.85em;
+}
+
+/* Index page */
+.species-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.species-card {
+    border: 1px solid var(--border-color);
+    background: var(--content-bg);
+    text-align: center;
+    transition: box-shadow 0.2s;
+}
+
+.species-card:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.species-card img {
+    width: 100%;
+    height: 160px;
+    object-fit: cover;
+    image-rendering: pixelated;
+}
+
+.species-card .card-body {
+    padding: 8px 10px;
+}
+
+.species-card .card-body h3 {
+    font-size: 0.95em;
+    margin: 0 0 4px;
+}
+
+.species-card .card-body h3 a {
+    color: var(--link-color);
+    text-decoration: none;
+}
+
+.species-card .card-body p {
+    font-size: 0.8em;
+    color: var(--muted-color);
+    margin: 0;
+}
+
+/* Stats box on index */
+.stats-box {
+    background: var(--infobox-bg);
+    border: 1px solid var(--border-color);
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.stats-box h3 {
+    margin-bottom: 8px;
+}
+
+.stats-box dl {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+}
+
+.stats-box dt { font-weight: bold; }
+.stats-box dd { color: var(--muted-color); }
+
+/* Footer */
+.site-footer {
+    text-align: center;
+    padding: 20px;
+    font-size: 0.85em;
+    color: var(--muted-color);
+    border-top: 1px solid var(--border-color);
+    margin-top: 30px;
+}
+
+/* Category index page */
+.category-section {
+    margin-bottom: 24px;
+}
+
+.category-section h2 { font-family: var(--font-serif); }
+
+.category-list {
+    list-style: none;
+    padding: 0;
+    columns: 2;
+}
+
+.category-list li {
+    padding: 2px 0;
+}
+
+.category-list a {
+    color: var(--link-color);
+    text-decoration: none;
+}
+
+/* Responsive */
+@media (max-width: 700px) {
+    .infobox {
+        float: none;
+        width: 100%;
+        margin: 0 0 16px 0;
+    }
+    .species-grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    }
+}
