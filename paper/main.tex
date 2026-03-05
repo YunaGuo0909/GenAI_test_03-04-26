@@ -1,0 +1,267 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{subcaption}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage[numbers]{natbib}
+\usepackage{setspace}
+\onehalfspacing
+
+\title{Bestiary of the Unreal:\\
+A Dual-Model Generative System for AI-Imagined Virtual Creatures}
+\author{Yutong Guo\\
+Student ID: s5819307\\
+MSc Artificial Intelligence for Media\\
+Bournemouth University}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This report presents the design, implementation, and critical evaluation of a generative AI system that produces an encyclopedia of virtual creatures---the \emph{Bestiary of the Unreal}. The system integrates two generative models built from the ground up: (1)~a Denoising Diffusion Probabilistic Model (DDPM) for creature image generation, trained on diverse animal photography, and (2)~a character-level Generative Pre-trained Transformer (GPT) for species description synthesis, trained on a curated corpus of zoological texts and fictional creature entries. Both models operate independently, with their outputs combined through a media pipeline into a Wikipedia-style static website that serves as the final media artefact. We analyse the technical trade-offs between GAN and diffusion approaches for image generation, evaluate text generation quality through perplexity and human assessment, and critically examine the semantic disconnect between independently generated images and descriptions. The work is situated within current debates around AI-generated media content, creative AI tools, and the ethical implications of synthetic natural history.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%% ============================================================
+\section{Problem Definition and Context}
+\label{sec:problem}
+
+The generation of coherent multimedia content---combining visual and textual elements---represents a significant challenge in generative AI for media. While state-of-the-art models such as DALL-E~3 and GPT-4 can produce impressive results when used as black-box tools, understanding the \emph{principles} underlying these systems requires building them from the ground up.
+
+This project addresses the media challenge of \textbf{automated concept design for fictional creatures}---a task with direct applications in game development, film pre-production, interactive storytelling, and educational media. The global video game market alone generates over \$180 billion annually, with creature and character design representing a substantial creative bottleneck.
+
+Rather than replicating existing creatures, our system explores what happens when generative models are left to ``imagine'' organisms that do not exist. The resulting \emph{Bestiary of the Unreal} functions both as a media artefact and as a lens through which to examine the creative capabilities and limitations of generative AI.
+
+The project contributes to two active research areas:
+\begin{itemize}
+    \item \textbf{Image generation}: The evolution from GANs~\cite{goodfellow2014generative} to diffusion models~\cite{ho2020denoising} represents a paradigm shift in visual content synthesis. We implement and compare both approaches on the domain-specific task of animal image generation.
+    \item \textbf{Text generation}: Transformer-based language models~\cite{vaswani2017attention, radford2019language} have revolutionised natural language generation. We implement a character-level GPT to generate structured zoological descriptions, exploring the boundary between learned pattern and creative hallucination.
+\end{itemize}
+
+%% ============================================================
+\section{System Design and Methodology}
+\label{sec:system}
+
+\subsection{Overall Architecture}
+
+The system comprises two independent generative models, each producing a different media modality, integrated through a pipeline that combines their outputs into a coherent encyclopedic artefact (Figure~\ref{fig:architecture}).
+
+% TODO: Add system architecture diagram
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.9\textwidth]{figures/architecture.png}
+%     \caption{System architecture. Model~1 (DDPM) generates creature images conditioned on animal class. Model~2 (GPT) generates species descriptions conditioned on a structured prefix. The pipeline combines both outputs into Wikipedia-style encyclopedic entries.}
+%     \label{fig:architecture}
+% \end{figure}
+
+\subsection{Model 1: Creature Image Generation (DDPM)}
+
+\subsubsection{Dataset}
+
+We train on animal photograph datasets to learn the visual distribution of real animals. The primary dataset is AFHQ v2~\cite{choi2020starganv2}, comprising approximately 15{,}000 high-quality animal images across three categories (cat, dog, wildlife). For extended experiments, AWA2~\cite{xian2018zero} provides 37{,}000 images across 50 animal classes. Images are resized to $64 \times 64$ (or $128 \times 128$ on larger GPU) pixels.
+
+\subsubsection{DCGAN Baseline}
+
+As a baseline, we implement a Deep Convolutional GAN~\cite{radford2015unsupervised}:
+\begin{itemize}
+    \item \textbf{Generator}: Five transposed convolutional layers mapping a 100-dimensional latent vector $z \sim \mathcal{N}(0, I)$ to a $64 \times 64 \times 3$ RGB image.
+    \item \textbf{Discriminator}: Symmetric strided convolutional architecture with LeakyReLU activations.
+    \item \textbf{Training}: Binary cross-entropy loss with Adam optimiser ($\text{lr}=2\times10^{-4}$, $\beta_1=0.5$).
+\end{itemize}
+
+\subsubsection{DDPM}
+
+The diffusion model implements the framework of Ho et al.~\cite{ho2020denoising}:
+
+\textbf{Forward process.} Gaussian noise is progressively added over $T=1000$ timesteps:
+\begin{equation}
+    q(x_t | x_0) = \mathcal{N}(x_t; \sqrt{\bar{\alpha}_t}\, x_0, (1-\bar{\alpha}_t)\, I)
+\end{equation}
+where $\bar{\alpha}_t = \prod_{s=1}^{t}(1 - \beta_s)$ with linear schedule $\beta_t \in [10^{-4}, 0.02]$.
+
+\textbf{Reverse process.} A U-Net with sinusoidal timestep embeddings, residual blocks with GroupNorm, and self-attention at lower spatial resolutions predicts the noise $\epsilon_\theta(x_t, t)$:
+\begin{equation}
+    \mathcal{L}_{\text{DDPM}} = \mathbb{E}_{x_0, \epsilon, t}\left[\| \epsilon - \epsilon_\theta(x_t, t, c) \|^2\right]
+\end{equation}
+
+\textbf{Class conditioning} uses Classifier-Free Guidance (CFG)~\cite{ho2022classifier}: the class label $c$ is randomly dropped with probability $p=0.1$ during training.
+
+\subsection{Model 2: Species Description Generation (GPT)}
+
+\subsubsection{Corpus}
+
+The training corpus is constructed from two sources:
+\begin{itemize}
+    \item \textbf{Wikipedia animal articles}: Summaries of approximately 70 animal species, providing factual zoological writing patterns (habitat, morphology, behaviour).
+    \item \textbf{Fictional creature descriptions}: Handcrafted entries in a consistent encyclopedic style, teaching the model the structural format of species entries.
+\end{itemize}
+
+Each entry follows a structured template with metadata fields (Name, Class, Habitat, Size) followed by free-text description. The corpus is repeated to increase training density for the character-level model.
+
+\subsubsection{Architecture}
+
+We implement a decoder-only Transformer~\cite{radford2019language} operating at the character level:
+\begin{itemize}
+    \item \textbf{Token embedding}: Each character is embedded into a $d$-dimensional vector ($d=384$).
+    \item \textbf{Positional embedding}: Learned absolute position embeddings for context length $L=256$.
+    \item \textbf{Transformer blocks}: $N=6$ pre-norm decoder blocks, each containing multi-head causal self-attention ($h=6$ heads) and a position-wise feed-forward network with GELU activation.
+    \item \textbf{Output}: Weight-tied linear projection to character vocabulary.
+    \item \textbf{Total parameters}: $\sim$8M.
+\end{itemize}
+
+Character-level tokenisation was chosen over BPE for transparency: every prediction step is interpretable, and the model must learn spelling, grammar, and formatting from raw characters.
+
+\subsubsection{Conditional Generation}
+
+Rather than architectural conditioning, we use \textbf{prompt-based conditioning}: the structured prefix (Name, Class, Habitat, Size) serves as the conditioning signal. The model generates descriptions by continuing from this prefix, having learned the template structure during training.
+
+\subsection{Integration Pipeline}
+
+The pipeline orchestrates both models:
+\begin{enumerate}
+    \item Random creature attributes (class, habitat, size) are sampled.
+    \item Model~1 generates a creature image conditioned on an image class label.
+    \item Model~2 generates a species description conditioned on the attribute prefix.
+    \item Outputs are combined into structured JSON entries.
+    \item A static site generator renders entries as Wikipedia-style HTML pages.
+\end{enumerate}
+
+Importantly, the two models operate \textbf{independently}---neither has access to the other's output. This architectural choice is discussed critically in Section~\ref{sec:critical}.
+
+%% ============================================================
+\section{Experimental Process and Evaluation}
+\label{sec:evaluation}
+
+\subsection{Image Generation Results}
+
+% TODO: Add generated image grids and FID scores after training
+% \begin{table}[H]
+%     \centering
+%     \caption{Quantitative comparison of image generation models.}
+%     \begin{tabular}{lcc}
+%         \toprule
+%         Model & FID $\downarrow$ & Training Time \\
+%         \midrule
+%         DCGAN & -- & -- \\
+%         DDPM (unconditional) & -- & -- \\
+%         DDPM (class-conditional, CFG) & -- & -- \\
+%         \bottomrule
+%     \end{tabular}
+%     \label{tab:image_results}
+% \end{table}
+
+\subsection{Text Generation Results}
+
+% TODO: Add perplexity curves, sample outputs at different temperatures
+% Evaluate: readability, factual consistency, structural adherence, creativity
+
+\subsection{Integrated Output}
+
+% TODO: Show example bestiary entries, discuss visual-textual coherence
+
+%% ============================================================
+\section{Human--AI Interaction}
+\label{sec:human_ai}
+
+% TODO: Discuss:
+% - User controls: class/habitat/size selection -> conditioning both models
+% - The Wikipedia interface as a familiar interaction paradigm
+% - Curation: selecting which generated creatures to include
+% - Temperature/top-k tuning as creative control
+% - Division of labour: AI generates, human curates and evaluates
+
+%% ============================================================
+\section{Critical Analysis}
+\label{sec:critical}
+
+\subsection{GAN vs Diffusion for Image Generation}
+
+% TODO: Discuss:
+% - Training stability (mode collapse in GAN vs stable diffusion training)
+% - Sample quality and diversity trade-offs
+% - Computational cost: GAN faster to train, diffusion slower but higher quality
+% - Controllability via CFG
+
+\subsection{Character-Level vs Subword Tokenisation}
+
+% TODO: Discuss:
+% - Character-level: full transparency, must learn spelling, smaller vocab
+% - BPE: faster convergence, better for longer texts, but opaque tokenisation
+% - Implications for understanding what the model learns
+
+\subsection{The Image--Text Disconnect}
+
+The most significant limitation of the current system is that images and text are generated independently. The DDPM produces images based on learned visual distributions of real animals, while the GPT generates text based on learned linguistic patterns. There is no mechanism ensuring semantic consistency between the generated image and its paired description.
+
+% TODO: Expand with specific examples of mismatches
+% Discuss potential solutions: CLIP-guided generation, shared latent spaces, iterative refinement
+
+\subsection{Limitations}
+
+% TODO:
+% - Small image resolution (64x64 / 128x128)
+% - Limited text corpus size -> repetitive patterns
+% - No cross-modal alignment
+% - Character-level GPT produces occasional spelling errors
+% - Evaluation challenges for creative/generative outputs
+
+%% ============================================================
+\section{Ethical, Legal, and Societal Considerations}
+\label{sec:ethics}
+
+% TODO: Discuss:
+% - AI-generated misinformation: fake species could be mistaken for real
+%   -> mitigated by clear labelling and the "AI Notice" banner
+% - Copyright: AFHQ/AWA2 datasets and their licences
+% - Environmental cost: GPU training carbon footprint
+% - Bias: training data over-represents domestic animals (cats, dogs)
+%   -> generated "creatures" inherit this bias
+% - Transparency: all AI tools disclosed per assignment requirements
+% - Broader implications of AI in creative industries
+
+%% ============================================================
+\section{Reflection and Future Work}
+\label{sec:future}
+
+% TODO: Discuss:
+% - Cross-modal alignment via CLIP or contrastive learning
+% - Higher resolution images (256x256+) with improved architecture
+% - Larger text corpus for more diverse descriptions
+% - Interactive web version with live model inference
+% - User study to evaluate creative utility
+% - Connection to PhD research direction
+
+%% ============================================================
+\section{AI Tools Disclosure}
+\label{sec:ai_disclosure}
+
+In compliance with the assignment requirements, all AI tools used in this project are disclosed:
+
+\begin{itemize}
+    \item \textbf{Cursor AI Assistant}: Used for code scaffolding, debugging assistance, and initial project structure. All model architectures were reviewed, understood, and iterated upon by the author. Architectural decisions, hyperparameter choices, training configurations, and all analytical writing are the author's own work.
+    \item \textbf{PyTorch}: Deep learning framework for model implementation and training (open-source).
+    \item \textbf{Wikipedia API}: Used to fetch animal species summaries for the text training corpus.
+    % TODO: Add any other AI tools used during the project
+\end{itemize}
+
+All creative and analytical decisions remain the sole responsibility of the author.
+
+%% ============================================================
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}
