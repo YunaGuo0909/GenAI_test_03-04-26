@@ -9,7 +9,7 @@ Both are organized as ImageFolder-compatible directory structures.
 
 Usage:
     python model1_image_gen/download_data.py --dataset afhq
-    python model1_image_gen/download_data.py --dataset awa2
+    python model1_image_gen/download_data.py --dataset afhq --data_dir /transfer
 """
 
 import argparse
@@ -19,7 +19,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-DATA_DIR = Path(__file__).parent / "data"
+DEFAULT_DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR = DEFAULT_DATA_DIR
 
 AFHQ_URL = "https://www.dropbox.com/s/vkzjokiwof5h8w6/afhq_v2.zip?dl=1"
 AWA2_URL = "https://cvml.ista.ac.at/AwA2/AwA2-data.zip"
@@ -116,10 +117,16 @@ def download_awa2():
 
 
 def main():
+    global DATA_DIR
     parser = argparse.ArgumentParser(description="Download animal image datasets")
     parser.add_argument("--dataset", type=str, default="afhq", choices=["afhq", "awa2"],
                         help="Which dataset to download (default: afhq)")
+    parser.add_argument("--data_dir", type=str, default=None,
+                        help="Custom directory to store datasets (default: model1_image_gen/data/)")
     args = parser.parse_args()
+
+    if args.data_dir:
+        DATA_DIR = Path(args.data_dir)
 
     if args.dataset == "afhq":
         path = download_afhq()
