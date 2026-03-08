@@ -1,13 +1,20 @@
 """
-Train DDPM on AFHQ dataset for class-conditional animal image generation.
+Train DDPM on animal image datasets for class-conditional image generation.
 
-Supports Classifier-Free Guidance (CFG): during training, class labels are
-randomly dropped with probability p_uncond to enable unconditional generation
-at inference. At sampling time, the noise prediction is interpolated between
-conditional and unconditional estimates using a guidance scale w.
+Supports:
+- Stage 1: Pre-train on AFHQ (real animal photos)
+- Stage 2: Fine-tune on Dungeons & Diffusion (fantasy art) via --resume
+- Classifier-Free Guidance (CFG) throughout
 
 Usage:
-    python model1_image_gen/train_ddpm.py --data_root model1_image_gen/data/afhq/train
+    # Stage 1: Pre-train on AFHQ
+    python model1_image_gen/train_ddpm.py --data_root /transfer/afhq/train
+
+    # Stage 2: Fine-tune on D&D fantasy art
+    python model1_image_gen/train_ddpm.py --data_root /transfer/dnd/images \
+        --resume model1_image_gen/outputs/ddpm/checkpoints/ddpm_epoch_200.pt \
+        --output_dir model1_image_gen/outputs/ddpm_fantasy \
+        --epochs 100 --lr 5e-5
 """
 
 import argparse
@@ -60,27 +67,57 @@ def train(args):
     loader, num_classes = get_dataloader(args.data_root, args.image_size, args.batch_size)
 
     model = UNet(in_ch=3, base_ch=args.base_ch, num_classes=num_classes).to(device)
-    print(f"UNet params: {sum(p.numel() for p in model.parameters()):,}")
-
     diffusion = GaussianDiffusion(timesteps=args.timesteps, device=device)
     optimizer = optim.AdamW(model.parameters(), lr=args.lr)
 
+    start_epoch = 0
     losses = []
-    print(f"\nStarting DDPM training for {args.epochs} epochs...")
+
+    # Resume from checkpoint (for Stage 2 fine-tuning or crash recovery)
+    if args.resume:
+        print(f"\nLoading checkpoint: {args.resume}")
+        ckpt = torch.load(args.resume, map_location=device, weights_only=False)
+        ckpt_num_classes = ckpt.get("num_classes", 0)
+
+        if ckpt_num_classes != num_classes:
+            # Different number of classes: load compatible weights, reinitialise class layers
+            print(f"  Class count changed: {ckpt_num_classes} -> {num_classes} (transfer learning)")
+            state = ckpt["model_state_dict"]
+            compatible_state = {}
+            for k, v in state.items():
+                if "class_mlp" in k:
+                    print(f"  Skipping {k} (class dimension mismatch)")
+                    continue
+                if k in model.state_dict() and v.shape == model.state_dict()[k].shape:
+                    compatible_state[k] = v
+                else:
+                    print(f"  Skipping {k} (shape mismatch)")
+            model.load_state_dict(compatible_state, strict=False)
+            print(f"  Loaded {len(compatible_state)}/{len(model.state_dict())} weight tensors")
+        else:
+            model.load_state_dict(ckpt["model_state_dict"])
+            if not args.reset_optimizer:
+                optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+                for pg in optimizer.param_groups:
+                    pg["lr"] = args.lr
+            start_epoch = ckpt.get("epoch", 0)
+            losses = ckpt.get("losses", [])
+            print(f"  Resumed from epoch {start_epoch}")
+
+    print(f"UNet params: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"\nStarting DDPM training for {args.epochs} epochs (from epoch {start_epoch})...")
     start_time = time.time()
 
-    for epoch in range(args.epochs):
+    for epoch in range(start_epoch, start_epoch + args.epochs):
         model.train()
         epoch_loss = 0.0
-        pbar = tqdm(loader, desc=f"Epoch {epoch+1}/{args.epochs}")
+        pbar = tqdm(loader, desc=f"Epoch {epoch+1}/{start_epoch + args.epochs}")
 
         for images, labels in pbar:
             images = images.to(device)
             batch_size = images.size(0)
 
-            # Class conditioning with random dropout for CFG
             c_emb = F.one_hot(labels, num_classes).float().to(device)
-            # Randomly drop class label with probability p_uncond
             mask = (torch.rand(batch_size, device=device) < args.p_uncond).float()
             c_emb = c_emb * (1 - mask[:, None])
 
@@ -99,8 +136,7 @@ def train(args):
         losses.append(avg_loss)
         print(f"  Epoch {epoch+1} avg loss: {avg_loss:.4f}")
 
-        # Generate samples every few epochs
-        if (epoch + 1) % args.sample_every == 0 or epoch == 0:
+        if (epoch + 1) % args.sample_every == 0 or epoch == start_epoch:
             model.eval()
             n_per_class = 4
             samples_per_class = []
@@ -112,8 +148,7 @@ def train(args):
             save_grid(all_samples, os.path.join(args.output_dir, "samples", f"epoch_{epoch+1:03d}.png"),
                       nrow=n_per_class)
 
-        # Save checkpoint
-        if (epoch + 1) % args.save_every == 0 or epoch == args.epochs - 1:
+        if (epoch + 1) % args.save_every == 0 or epoch == start_epoch + args.epochs - 1:
             torch.save({
                 "epoch": epoch + 1,
                 "model_state_dict": model.state_dict(),
@@ -125,19 +160,21 @@ def train(args):
     elapsed = time.time() - start_time
     print(f"\nTraining complete in {elapsed/60:.1f} minutes")
 
-    # Plot loss curve
     plt.figure(figsize=(10, 5))
     plt.plot(losses)
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.title("DDPM Training Loss")
+    if args.resume:
+        plt.axvline(x=start_epoch, color="r", linestyle="--", label="Fine-tune start")
+        plt.legend()
     plt.tight_layout()
     plt.savefig(os.path.join(args.output_dir, "ddpm_loss_curve.png"), dpi=150)
     plt.close()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train DDPM on AFHQ")
+    parser = argparse.ArgumentParser(description="Train DDPM on animal images")
     parser.add_argument("--data_root", type=str, default="model1_image_gen/data/afhq/train")
     parser.add_argument("--output_dir", type=str, default="model1_image_gen/outputs/ddpm")
     parser.add_argument("--image_size", type=int, default=64)
@@ -150,5 +187,9 @@ if __name__ == "__main__":
                         help="Probability of dropping class label for CFG training")
     parser.add_argument("--sample_every", type=int, default=5)
     parser.add_argument("--save_every", type=int, default=20)
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Path to checkpoint for resuming / fine-tuning")
+    parser.add_argument("--reset_optimizer", action="store_true",
+                        help="Reset optimizer state when resuming (use for fine-tuning)")
     args = parser.parse_args()
     train(args)

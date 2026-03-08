@@ -70,9 +70,17 @@ The system comprises two independent generative models, each producing a differe
 
 \subsection{Model 1: Creature Image Generation (DDPM)}
 
-\subsubsection{Dataset}
+\subsubsection{Datasets and Two-Stage Training Strategy}
 
-We train on animal photograph datasets to learn the visual distribution of real animals. The primary dataset is AFHQ v2~\cite{choi2020starganv2}, comprising approximately 15{,}000 high-quality animal images across three categories (cat, dog, wildlife). For extended experiments, AWA2~\cite{xian2018zero} provides 37{,}000 images across 50 animal classes. Images are resized to $64 \times 64$ (or $128 \times 128$ on larger GPU) pixels.
+Rather than training on a single dataset, we adopt a \textbf{two-stage transfer learning} approach to bridge the domain gap between photorealistic animal imagery and fantasy creature aesthetics:
+
+\begin{enumerate}
+    \item \textbf{Stage 1 --- Pre-training on AFHQ v2} (real-world domain). The primary dataset is AFHQ v2~\cite{choi2020starganv2}, comprising approximately 15{,}000 high-quality animal photographs across three categories (cat, dog, wildlife) at $512 \times 512$ resolution. Images are resized to $64 \times 64$ pixels. This stage teaches the model the fundamental visual distribution of real animal morphology --- fur texture, eye structure, facial proportions --- with a large and clean dataset.
+
+    \item \textbf{Stage 2 --- Fine-tuning on Dungeons \& Diffusion} (fantasy domain). We then fine-tune the pre-trained model on the Dungeons \& Diffusion dataset\footnote{\url{https://huggingface.co/datasets/0xJustin/Dungeons-and-Diffusion}}, a collection of approximately 2{,}500 fantasy character art images across 30 races (e.g.\ dragonborn, tiefling, kobold). The fine-tuning uses a reduced learning rate ($5 \times 10^{-5}$, down from $2 \times 10^{-4}$) to preserve learned features while shifting the visual style toward fantasy illustration. Compatible U-Net weights are transferred; class-conditional layers are reinitialised to accommodate the new label space.
+\end{enumerate}
+
+This strategy is motivated by the observation that the fantasy art dataset alone is too small to train a DDPM from scratch at acceptable quality, while the AFHQ-only model produces photorealistic outputs that lack the desired fantastical character. The two-stage approach allows us to leverage the rich visual priors learned from real animals while adapting the generative distribution toward a stylised fantasy domain. We compare Stage~1-only and Stage~1+2 outputs in Section~\ref{sec:evaluation}.
 
 \subsubsection{DCGAN Baseline}
 
@@ -104,13 +112,33 @@ where $\bar{\alpha}_t = \prod_{s=1}^{t}(1 - \beta_s)$ with linear schedule $\bet
 
 \subsubsection{Corpus}
 
-The training corpus is constructed from two sources:
+The training corpus is designed to teach the model the register and structure of formal taxonomic encyclopedias, following the conventions of Wikipedia zoological articles. It is constructed from two complementary sources:
+
 \begin{itemize}
-    \item \textbf{Wikipedia animal articles}: Summaries of approximately 70 animal species, providing factual zoological writing patterns (habitat, morphology, behaviour).
-    \item \textbf{Fictional creature descriptions}: Handcrafted entries in a consistent encyclopedic style, teaching the model the structural format of species entries.
+    \item \textbf{Wikipedia animal articles} ($\sim$50 species): Introductory extracts for real species spanning 10 taxonomic classes (Mammalia, Aves, Reptilia, Amphibia, Chondrichthyes, Actinopterygii, Cephalopoda, Insecta, Arachnida, Scyphozoa), fetched via the Wikipedia REST API. These provide authentic zoological prose covering morphology, behaviour, ecology, and conservation.
+    \item \textbf{Fictional creature descriptions} (10 species): Handcrafted multi-paragraph entries written in the same formal taxonomic register, describing invented organisms with internally consistent biology (e.g.\ antifreeze glycoproteins in a glacial annelid, iron-oxide-infused keratin in a volcanic reptile). These teach the model to generate novel yet plausible species descriptions.
 \end{itemize}
 
-Each entry follows a structured template with metadata fields (Name, Class, Habitat, Size) followed by free-text description. The corpus is repeated to increase training density for the character-level model.
+Each entry follows a structured template with full Linnaean classification metadata:
+
+\begin{verbatim}
+<SPECIES>
+Common Name: Ironscale Basilisk
+Scientific Name: Ferrovaranus ignicola
+Kingdom: Animalia
+Phylum: Chordata
+Class: Reptilia
+Order: Squamata
+Family: Varanidae
+Habitat: Active volcanic ridges and lava fields
+Conservation Status: Vulnerable
+---
+The Ironscale Basilisk (Ferrovaranus ignicola) is a large
+thermophilic reptile endemic to active volcanic ridges...
+</SPECIES>
+\end{verbatim}
+
+This structured format serves a dual purpose: the metadata fields act as conditioning context during prompt-based generation, while the delimiter tokens (\texttt{<SPECIES>}, \texttt{---}, \texttt{</SPECIES>}) enable reliable parsing of model outputs. The corpus is repeated 5$\times$ to increase training density for the character-level model (total $\sim$600K characters).
 
 \subsubsection{Architecture}
 
