@@ -72,15 +72,21 @@ The system comprises two independent generative models, each producing a differe
 
 \subsubsection{Datasets and Two-Stage Training Strategy}
 
-Rather than training on a single dataset, we adopt a \textbf{two-stage transfer learning} approach to bridge the domain gap between photorealistic animal imagery and fantasy creature aesthetics:
+We train two parallel DDPM instances targeting different visual aspects of each creature, then apply a shared fine-tuning stage to inject fantasy aesthetics:
 
-\begin{enumerate}
-    \item \textbf{Stage 1 --- Pre-training on AFHQ v2} (real-world domain). The primary dataset is AFHQ v2~\cite{choi2020starganv2}, comprising approximately 15{,}000 high-quality animal photographs across three categories (cat, dog, wildlife) at $512 \times 512$ resolution. Images are resized to $64 \times 64$ pixels. This stage teaches the model the fundamental visual distribution of real animal morphology --- fur texture, eye structure, facial proportions --- with a large and clean dataset.
+\textbf{DDPM-Face} (portrait generation):
+\begin{itemize}
+    \item \textbf{Stage 1}: Pre-trained on AFHQ v2~\cite{choi2020starganv2} --- 15{,}000 high-quality animal face photographs across three categories (cat, dog, wildlife) at $512 \times 512$ resolution, resized to $64 \times 64$. This model learns fine-grained facial morphology: fur texture, eye structure, ear shape, and facial proportions.
+    \item \textbf{Stage 2}: Fine-tuned on Dungeons \& Diffusion~\cite{dungeons_diffusion} --- approximately 2{,}500 fantasy character art images across 30 races. Learning rate is reduced to $5 \times 10^{-5}$ (from $2 \times 10^{-4}$) to preserve learned features while shifting toward fantasy illustration style.
+\end{itemize}
 
-    \item \textbf{Stage 2 --- Fine-tuning on Dungeons \& Diffusion} (fantasy domain). We then fine-tune the pre-trained model on the Dungeons \& Diffusion dataset\footnote{\url{https://huggingface.co/datasets/0xJustin/Dungeons-and-Diffusion}}, a collection of approximately 2{,}500 fantasy character art images across 30 races (e.g.\ dragonborn, tiefling, kobold). The fine-tuning uses a reduced learning rate ($5 \times 10^{-5}$, down from $2 \times 10^{-4}$) to preserve learned features while shifting the visual style toward fantasy illustration. Compatible U-Net weights are transferred; class-conditional layers are reinitialised to accommodate the new label space.
-\end{enumerate}
+\textbf{DDPM-Body} (full-body illustration):
+\begin{itemize}
+    \item \textbf{Stage 1}: Pre-trained on AWA2~\cite{xian2018zero} --- 37{,}000 full-body animal photographs across 50 classes (lion, elephant, butterfly, etc.). This model learns complete body morphology: limb structure, body proportions, pose, and silhouette variety.
+    \item \textbf{Stage 2}: Fine-tuned on Dungeons \& Diffusion under the same transfer protocol as DDPM-Face.
+\end{itemize}
 
-This strategy is motivated by the observation that the fantasy art dataset alone is too small to train a DDPM from scratch at acceptable quality, while the AFHQ-only model produces photorealistic outputs that lack the desired fantastical character. The two-stage approach allows us to leverage the rich visual priors learned from real animals while adapting the generative distribution toward a stylised fantasy domain. We compare Stage~1-only and Stage~1+2 outputs in Section~\ref{sec:evaluation}.
+Both models share the identical U-Net architecture and diffusion schedule; only the training data differs. During fine-tuning, compatible convolutional weights are transferred from the Stage~1 checkpoint, while class-conditional layers are reinitialised to accommodate the new label space. The dual-model design enables each creature in the encyclopedia to be presented with both a \emph{portrait} and a \emph{full-body illustration}, mirroring the visual conventions of real zoological field guides. We compare Stage~1-only and Stage~1+2 outputs for both models in Section~\ref{sec:evaluation}.
 
 \subsubsection{DCGAN Baseline}
 
