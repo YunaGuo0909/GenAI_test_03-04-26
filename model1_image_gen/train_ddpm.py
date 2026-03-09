@@ -27,13 +27,29 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms, utils as vutils
+from PIL import ImageFile
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
 sys.path.insert(0, os.path.dirname(__file__))
 from models.ddpm import UNet, GaussianDiffusion
+
+
+class SafeImageFolder(datasets.ImageFolder):
+    """ImageFolder that skips corrupted images instead of crashing."""
+
+    def __getitem__(self, index):
+        while True:
+            try:
+                return super().__getitem__(index)
+            except (OSError, SyntaxError):
+                path, _ = self.samples[index]
+                print(f"  Warning: skipping corrupted image: {path}")
+                index = (index + 1) % len(self)
 
 
 def get_dataloader(data_root: str, image_size: int, batch_size: int, num_workers: int = 2):
@@ -44,7 +60,7 @@ def get_dataloader(data_root: str, image_size: int, batch_size: int, num_workers
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
-    dataset = datasets.ImageFolder(root=data_root, transform=transform)
+    dataset = SafeImageFolder(root=data_root, transform=transform)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
                         num_workers=num_workers, pin_memory=True, drop_last=True)
     num_classes = len(dataset.classes)
