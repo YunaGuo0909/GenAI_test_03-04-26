@@ -27,7 +27,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms, utils as vutils
-from PIL import ImageFile
+from PIL import ImageFile, Image
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -46,9 +46,8 @@ class SafeImageFolder(datasets.ImageFolder):
         while True:
             try:
                 return super().__getitem__(index)
-            except (OSError, SyntaxError):
-                path, _ = self.samples[index]
-                print(f"  Warning: skipping corrupted image: {path}")
+            except (OSError, SyntaxError, ValueError) as e:
+                print(f"  Warning: skipping corrupted image at index {index}: {e}")
                 index = (index + 1) % len(self)
 
 
