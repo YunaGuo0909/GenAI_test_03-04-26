@@ -25,7 +25,7 @@ DATA_DIR = DEFAULT_DATA_DIR
 
 AFHQ_URL = "https://www.dropbox.com/s/vkzjokiwof5h8w6/afhq_v2.zip?dl=1"
 AWA2_URL = "https://cvml.ista.ac.at/AwA2/AwA2-data.zip"
-DND_PARQUET_URL = "https://huggingface.co/datasets/0xJustin/Dungeons-and-Diffusion/resolve/main/data/train-00000-of-00001-6260e77b4303bc30.parquet"
+DND_PARQUET_URL = "https://huggingface.co/api/datasets/0xJustin/Dungeons-and-Diffusion/parquet/default/train/0.parquet"
 
 
 def download_with_progress(url: str, dest: str, desc: str = ""):
