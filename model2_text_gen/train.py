@@ -77,8 +77,14 @@ def train(args):
     print(f"Vocabulary: {dataset.vocab_size} characters")
     print(f"Training sequences: {len(dataset):,}")
 
+    if getattr(args, "transfer_dir", None):
+        transfer_run = os.path.join(args.transfer_dir, os.path.basename(args.output_dir.rstrip(os.sep)))
+        os.makedirs(os.path.join(transfer_run, "samples"), exist_ok=True)
+        os.makedirs(os.path.join(transfer_run, "checkpoints"), exist_ok=True)
+        print(f"Intermediate outputs → {transfer_run}")
+    else:
+        transfer_run = None
     os.makedirs(args.output_dir, exist_ok=True)
-    os.makedirs(os.path.join(args.output_dir, "samples"), exist_ok=True)
     os.makedirs(os.path.join(args.output_dir, "checkpoints"), exist_ok=True)
 
     # Save vocabulary mapping for inference
@@ -128,7 +134,7 @@ def train(args):
             print(f"  Epoch {epoch+1}/{args.epochs}  loss={avg_loss:.4f}  "
                   f"lr={scheduler.get_last_lr()[0]:.2e}")
 
-        # Generate a sample every few epochs
+        # Generate a sample every few epochs → transfer_dir (or output_dir)
         if (epoch + 1) % args.sample_every == 0 or epoch == 0:
             model.eval()
             prompt = "<SPECIES>\nName: "
@@ -136,40 +142,53 @@ def train(args):
             generated = model.generate(prompt_ids, max_new_tokens=400, temperature=0.8, top_k=40)
             text_out = dataset.decode(generated[0].tolist())
 
-            sample_path = os.path.join(args.output_dir, "samples", f"epoch_{epoch+1:03d}.txt")
-            with open(sample_path, "w", encoding="utf-8") as f:
-                f.write(text_out)
+            samples_dir = transfer_run if transfer_run else args.output_dir
+            sample_path = os.path.join(samples_dir, "samples", f"epoch_{epoch+1:03d}.txt")
+            try:
+                with open(sample_path, "w", encoding="utf-8") as f:
+                    f.write(text_out)
+            except OSError as e:
+                print(f"  Warning: could not save sample ({e})")
 
-            # Print a preview
             preview = text_out[:300].replace("\n", " | ")
             print(f"  Sample: {preview}...")
 
-        # Save checkpoint
-        if (epoch + 1) % args.save_every == 0 or epoch == args.epochs:
-            torch.save({
-                "epoch": epoch + 1,
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "losses": losses,
-                "vocab_size": dataset.vocab_size,
-                "block_size": args.block_size,
-                "n_embd": args.n_embd,
-                "n_head": args.n_head,
-                "n_layer": args.n_layer,
-            }, os.path.join(args.output_dir, "checkpoints", f"gpt_epoch_{epoch+1:03d}.pt"))
+        # Save checkpoint: non-final → transfer_dir, final → output_dir (current)
+        is_final_epoch = (epoch + 1 == args.epochs)
+        if (epoch + 1) % args.save_every == 0 or is_final_epoch:
+            ckpt_name = f"gpt_epoch_{epoch+1:03d}.pt"
+            ckpt_dir = args.output_dir if is_final_epoch and transfer_run else (transfer_run or args.output_dir)
+            ckpt_path = os.path.join(ckpt_dir, "checkpoints", ckpt_name)
+            try:
+                torch.save({
+                    "epoch": epoch + 1,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "losses": losses,
+                    "vocab_size": dataset.vocab_size,
+                    "block_size": args.block_size,
+                    "n_embd": args.n_embd,
+                    "n_head": args.n_head,
+                    "n_layer": args.n_layer,
+                }, ckpt_path)
+                print(f"  Checkpoint saved: {ckpt_path}")
+            except (OSError, RuntimeError) as e:
+                print(f"  Warning: could not save checkpoint ({e})")
 
     elapsed = time.time() - start_time
     print(f"\nTraining complete in {elapsed/60:.1f} minutes")
 
-    # Plot loss curve
-    plt.figure(figsize=(10, 5))
-    plt.plot(losses)
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss (Cross-Entropy)")
-    plt.title("GPT Training Loss")
-    plt.tight_layout()
-    plt.savefig(os.path.join(args.output_dir, "gpt_loss_curve.png"), dpi=150)
-    plt.close()
+    try:
+        plt.figure(figsize=(10, 5))
+        plt.plot(losses)
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss (Cross-Entropy)")
+        plt.title("GPT Training Loss")
+        plt.tight_layout()
+        plt.savefig(os.path.join(args.output_dir, "gpt_loss_curve.png"), dpi=150)
+        plt.close()
+    except OSError as e:
+        print(f"Warning: could not save loss curve ({e})")
 
 
 if __name__ == "__main__":
@@ -185,5 +204,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--sample_every", type=int, default=10)
     parser.add_argument("--save_every", type=int, default=20)
+    parser.add_argument("--transfer_dir", type=str, default=None,
+                        help="Save intermediate checkpoints/samples here (e.g. /transfer). Final checkpoint only in output_dir.")
     args = parser.parse_args()
     train(args)

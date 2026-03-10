@@ -75,8 +75,16 @@ def train(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
+    # Intermediate outputs (samples + non-final checkpoints) go to transfer_dir if set
+    # Final checkpoint and loss curve always go to output_dir (project/current)
+    if getattr(args, "transfer_dir", None):
+        transfer_run = os.path.join(args.transfer_dir, os.path.basename(args.output_dir.rstrip(os.sep)))
+        os.makedirs(os.path.join(transfer_run, "samples"), exist_ok=True)
+        os.makedirs(os.path.join(transfer_run, "checkpoints"), exist_ok=True)
+        print(f"Intermediate outputs → {transfer_run}")
+    else:
+        transfer_run = None
     os.makedirs(args.output_dir, exist_ok=True)
-    os.makedirs(os.path.join(args.output_dir, "samples"), exist_ok=True)
     os.makedirs(os.path.join(args.output_dir, "checkpoints"), exist_ok=True)
 
     loader, num_classes = get_dataloader(args.data_root, args.image_size, args.batch_size)
@@ -160,32 +168,53 @@ def train(args):
                 samples = diffusion.sample(model, (n_per_class, 3, args.image_size, args.image_size), c)
                 samples_per_class.append(samples)
             all_samples = torch.cat(samples_per_class, dim=0).cpu()
-            save_grid(all_samples, os.path.join(args.output_dir, "samples", f"epoch_{epoch+1:03d}.png"),
-                      nrow=n_per_class)
+            samples_dir = (transfer_run if transfer_run else args.output_dir)
+            sample_path = os.path.join(samples_dir, "samples", f"epoch_{epoch+1:03d}.png")
+            try:
+                save_grid(all_samples, sample_path, nrow=n_per_class)
+            except OSError as e:
+                print(f"  Warning: could not save sample grid ({e})")
 
-        if (epoch + 1) % args.save_every == 0 or epoch == start_epoch + args.epochs - 1:
-            torch.save({
-                "epoch": epoch + 1,
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "losses": losses,
-                "num_classes": num_classes,
-            }, os.path.join(args.output_dir, "checkpoints", f"ddpm_epoch_{epoch+1:03d}.pt"))
+        is_final_epoch = (epoch + 1 == start_epoch + args.epochs)
+        if (epoch + 1) % args.save_every == 0 or is_final_epoch:
+            ckpt_name = f"ddpm_epoch_{epoch+1:03d}.pt"
+            # Non-final checkpoints → transfer_dir; final → output_dir (current/project)
+            if transfer_run and not is_final_epoch:
+                ckpt_path = os.path.join(transfer_run, "checkpoints", ckpt_name)
+            else:
+                ckpt_path = os.path.join(args.output_dir, "checkpoints", ckpt_name)
+            try:
+                torch.save({
+                    "epoch": epoch + 1,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "losses": losses,
+                    "num_classes": num_classes,
+                }, ckpt_path)
+                print(f"  Checkpoint saved: {ckpt_path}")
+            except (OSError, RuntimeError) as e:
+                print(f"  Warning: could not save checkpoint ({e}). Free disk space and try --resume from last successful checkpoint.")
 
     elapsed = time.time() - start_time
     print(f"\nTraining complete in {elapsed/60:.1f} minutes")
 
-    plt.figure(figsize=(10, 5))
-    plt.plot(losses)
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("DDPM Training Loss")
-    if args.resume:
-        plt.axvline(x=start_epoch, color="r", linestyle="--", label="Fine-tune start")
-        plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(args.output_dir, "ddpm_loss_curve.png"), dpi=150)
-    plt.close()
+    loss_path = os.path.join(args.output_dir, "ddpm_loss_curve.png")
+    try:
+        plt.figure(figsize=(10, 5))
+        plt.plot(losses)
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.title("DDPM Training Loss")
+        if args.resume:
+            plt.axvline(x=start_epoch, color="r", linestyle="--", label="Fine-tune start")
+            plt.legend()
+        plt.tight_layout()
+        plt.savefig(loss_path, dpi=150)
+        print(f"Loss curve saved to {loss_path}")
+    except OSError as e:
+        print(f"Warning: could not save loss curve ({e}). Checkpoints and samples are unchanged.")
+    finally:
+        plt.close()
 
 
 if __name__ == "__main__":
@@ -206,5 +235,7 @@ if __name__ == "__main__":
                         help="Path to checkpoint for resuming / fine-tuning")
     parser.add_argument("--reset_optimizer", action="store_true",
                         help="Reset optimizer state when resuming (use for fine-tuning)")
+    parser.add_argument("--transfer_dir", type=str, default=None,
+                        help="Save intermediate checkpoints and samples here (e.g. /transfer). Final checkpoint only saved to output_dir.")
     args = parser.parse_args()
     train(args)

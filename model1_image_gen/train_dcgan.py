@@ -60,8 +60,14 @@ def train(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
+    if getattr(args, "transfer_dir", None):
+        transfer_run = os.path.join(args.transfer_dir, os.path.basename(args.output_dir.rstrip(os.sep)))
+        os.makedirs(os.path.join(transfer_run, "samples"), exist_ok=True)
+        os.makedirs(os.path.join(transfer_run, "checkpoints"), exist_ok=True)
+        print(f"Intermediate outputs → {transfer_run}")
+    else:
+        transfer_run = None
     os.makedirs(args.output_dir, exist_ok=True)
-    os.makedirs(os.path.join(args.output_dir, "samples"), exist_ok=True)
     os.makedirs(os.path.join(args.output_dir, "checkpoints"), exist_ok=True)
 
     loader = get_dataloader(args.data_root, args.image_size, args.batch_size)
@@ -130,27 +136,42 @@ def train(args):
                 "D(G(z))": f"{D_G_z1:.3f}/{D_G_z2:.3f}",
             })
 
-        # Save samples every epoch
+        # Save samples every epoch → transfer_dir (or output_dir)
         with torch.no_grad():
             fake_samples = netG(fixed_noise).detach().cpu()
-        save_grid(fake_samples, os.path.join(args.output_dir, "samples", f"epoch_{epoch+1:03d}.png"))
+        samples_dir = transfer_run if transfer_run else args.output_dir
+        try:
+            save_grid(fake_samples, os.path.join(samples_dir, "samples", f"epoch_{epoch+1:03d}.png"))
+        except OSError as e:
+            print(f"  Warning: could not save sample grid ({e})")
 
-        # Save checkpoint every 10 epochs
-        if (epoch + 1) % 10 == 0 or epoch == args.epochs - 1:
-            torch.save({
-                "epoch": epoch + 1,
-                "netG_state_dict": netG.state_dict(),
-                "netD_state_dict": netD.state_dict(),
-                "optimizerG_state_dict": optimizerG.state_dict(),
-                "optimizerD_state_dict": optimizerD.state_dict(),
-                "g_losses": g_losses,
-                "d_losses": d_losses,
-            }, os.path.join(args.output_dir, "checkpoints", f"dcgan_epoch_{epoch+1:03d}.pt"))
+        # Checkpoint every 10 epochs; final epoch → output_dir (current), else → transfer_dir
+        is_final = (epoch + 1 == args.epochs)
+        if (epoch + 1) % 10 == 0 or is_final:
+            ckpt_name = f"dcgan_epoch_{epoch+1:03d}.pt"
+            ckpt_dir = args.output_dir if is_final and transfer_run else (transfer_run or args.output_dir)
+            ckpt_path = os.path.join(ckpt_dir, "checkpoints", ckpt_name)
+            try:
+                torch.save({
+                    "epoch": epoch + 1,
+                    "netG_state_dict": netG.state_dict(),
+                    "netD_state_dict": netD.state_dict(),
+                    "optimizerG_state_dict": optimizerG.state_dict(),
+                    "optimizerD_state_dict": optimizerD.state_dict(),
+                    "g_losses": g_losses,
+                    "d_losses": d_losses,
+                }, ckpt_path)
+                print(f"  Checkpoint saved: {ckpt_path}")
+            except (OSError, RuntimeError) as e:
+                print(f"  Warning: could not save checkpoint ({e})")
 
     elapsed = time.time() - start_time
     print(f"\nTraining complete in {elapsed/60:.1f} minutes")
 
-    plot_losses(g_losses, d_losses, os.path.join(args.output_dir, "dcgan_loss_curve.png"))
+    try:
+        plot_losses(g_losses, d_losses, os.path.join(args.output_dir, "dcgan_loss_curve.png"))
+    except OSError as e:
+        print(f"Warning: could not save loss curve ({e})")
     print(f"Results saved to {args.output_dir}")
 
 
@@ -167,5 +188,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--lr", type=float, default=0.0002)
     parser.add_argument("--beta1", type=float, default=0.5, help="Adam beta1")
+    parser.add_argument("--transfer_dir", type=str, default=None,
+                        help="Save intermediate checkpoints/samples here (e.g. /transfer). Final checkpoint only in output_dir.")
     args = parser.parse_args()
     train(args)
