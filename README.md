@@ -1,4 +1,4 @@
-# Bestiary of the Unreal — AI-Generated Virtual Creature Encyclopedia
+# Unrealipedia — AI-Generated Virtual Creature Encyclopedia
 
 An AI-generated encyclopedia of fictional creatures, created as the media artefact for the
 *Generative AI for Media* (Level 7) coursework at Bournemouth University.
